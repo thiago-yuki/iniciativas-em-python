@@ -1,0 +1,282 @@
+import sys
+import pygame
+
+
+class Calculadora:
+
+    def __init__(self):
+        self.historico = []
+        self.limpar()
+
+    def somar(self, a: float, b: float) -> float:
+        return a + b
+
+    def subtrair(self, a: float, b: float) -> float:
+        return a - b
+
+    def multiplicar(self, a: float, b: float) -> float:
+        return a * b
+
+    def dividir(self, a: float, b: float) -> float:
+        if b == 0:
+            raise ZeroDivisionError("Divisão por zero")
+        return a / b
+
+    def limpar(self):
+        self.atual = "0"  # texto exibido / número em edição
+        self.anterior = None  # primeiro operando
+        self.operador = None  # "+", "-", "*", "/"
+        self.novo = True  # próximo dígito começa um número novo
+        self.erro = False
+        self.expressao = ""  # linha pequena acima do visor
+
+    def digitar(self, c: str):
+        if self.erro:
+            self.limpar()
+        if self.novo:
+            self.atual = "0"
+            self.novo = False
+        if c == ".":
+            if "." not in self.atual:
+                self.atual += "."
+        elif len(self.atual.replace(".", "")) < 12:
+            self.atual = c if self.atual == "0" else self.atual + c
+
+    def apagar(self):
+        if self.erro or self.novo:
+            return
+        self.atual = self.atual[:-1]
+        if self.atual in ("", "-"):
+            self.atual = "0"
+
+    def escolher_operador(self, op: str):
+        if self.erro:
+            return
+        if self.operador and self.novo:
+            self.operador = op
+            self.expressao = f"{self._fmt(self.anterior)} {self._simbolo(op)}"
+            return
+        if self.operador:
+            self.calcular()
+            if self.erro:
+                return
+        self.anterior = float(self.atual)
+        self.operador = op
+        self.novo = True
+        self.expressao = f"{self._fmt(self.anterior)} {self._simbolo(op)}"
+
+    def calcular(self):
+        if self.erro or self.operador is None:
+            return
+        a, b = self.anterior, float(self.atual)
+        funcoes = {
+            "+": self.somar,
+            "-": self.subtrair,
+            "*": self.multiplicar,
+            "/": self.dividir,
+        }
+        try:
+            resultado = funcoes[self.operador](a, b)
+        except ZeroDivisionError:
+            self.erro = True
+            self.atual = "Erro"
+            self.expressao = "Não dá para dividir por zero"
+            self.operador = None
+            self.anterior = None
+            self.novo = True
+            return
+        registro = f"{self._fmt(a)} {self._simbolo(self.operador)} {self._fmt(b)} = {self._fmt(resultado)}"
+        self.historico.append(registro)
+        self.expressao = registro
+        self.atual = self._fmt(resultado, para_texto=True)
+        self.operador = None
+        self.anterior = None
+        self.novo = True
+
+    @staticmethod
+    def _simbolo(op: str) -> str:
+        return {"+": "+", "-": "-", "*": "×", "/": "÷"}[op]
+
+    @staticmethod
+    def _fmt(valor: float, para_texto: bool = False) -> str:
+        if valor == int(valor) and abs(valor) < 1e12:
+            texto = str(int(valor))
+        else:
+            texto = f"{valor:.10g}"
+        return texto if para_texto else texto.replace(".", ",")
+
+    def texto_visor(self) -> str:
+        return self.atual.replace(".", ",")
+
+
+LARGURA, ALTURA = 340, 520
+MARGEM = 12
+VISOR_ALTURA = 130
+
+COR_FUNDO = (0, 156, 59)  
+COR_VISOR = (18, 41, 107)  
+COR_TEXTO = (255, 255, 255)  
+COR_TEXTO_FRACO = (200, 215, 240) 
+COR_NUMERO = (255, 223, 0)  
+COR_OPERADOR = (18, 41, 107)  
+COR_ESPECIAL = (220, 50, 50)  
+COR_IGUAL = (0, 120, 45)  
+
+
+class Botao:
+    def __init__(self, rotulo, valor, coluna, linha, cor, larg=1, alt=1):
+        self.rotulo = rotulo
+        self.valor = valor
+        self.cor = cor
+        self.coluna, self.linha, self.larg, self.alt = coluna, linha, larg, alt
+        self.rect = pygame.Rect(0, 0, 0, 0)
+
+    def posicionar(self, x0, y0, tam, espaco):
+        x = x0 + self.coluna * (tam + espaco)
+        y = y0 + self.linha * (tam + espaco)
+        w = self.larg * tam + (self.larg - 1) * espaco
+        h = self.alt * tam + (self.alt - 1) * espaco
+        self.rect = pygame.Rect(x, y, w, h)
+
+
+def criar_botoes():
+    b = Botao
+    botoes = [
+        b("C", "C", 0, 0, COR_ESPECIAL),
+        b("DEL", "DEL", 1, 0, COR_ESPECIAL),
+        b("÷", "/", 2, 0, COR_OPERADOR),
+        b("×", "*", 3, 0, COR_OPERADOR),
+        b("7", "7", 0, 1, COR_NUMERO),
+        b("8", "8", 1, 1, COR_NUMERO),
+        b("9", "9", 2, 1, COR_NUMERO),
+        b("-", "-", 3, 1, COR_OPERADOR),
+        b("4", "4", 0, 2, COR_NUMERO),
+        b("5", "5", 1, 2, COR_NUMERO),
+        b("6", "6", 2, 2, COR_NUMERO),
+        b("+", "+", 3, 2, COR_OPERADOR),
+        b("1", "1", 0, 3, COR_NUMERO),
+        b("2", "2", 1, 3, COR_NUMERO),
+        b("3", "3", 2, 3, COR_NUMERO),
+        b("=", "=", 3, 3, COR_IGUAL, alt=2),
+        b("0", "0", 0, 4, COR_NUMERO, larg=2),
+        b(",", ".", 2, 4, COR_NUMERO),
+    ]
+    espaco = 10
+    tam = (LARGURA - 2 * MARGEM - 3 * espaco) // 4
+    y0 = MARGEM + VISOR_ALTURA + MARGEM
+    for botao in botoes:
+        botao.posicionar(MARGEM, y0, tam, espaco)
+    return botoes
+
+
+def clarear(cor, valor=25):
+    return tuple(min(255, c + valor) for c in cor)
+
+
+def acionar(calc: Calculadora, valor: str):
+    if valor in "0123456789." and len(valor) == 1:
+        calc.digitar(valor)
+    elif valor in ("+", "-", "*", "/"):
+        calc.escolher_operador(valor)
+    elif valor == "=":
+        calc.calcular()
+    elif valor == "C":
+        calc.limpar()
+    elif valor == "DEL":
+        calc.apagar()
+
+
+def tecla_para_valor(evento):
+    if evento.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+        return "="
+    if evento.key == pygame.K_BACKSPACE:
+        return "DEL"
+    if evento.key == pygame.K_ESCAPE:
+        return "C"
+    c = evento.unicode
+    if c == ",":
+        return "."
+    if c and c in "0123456789.+-*/":
+        return c
+    if c == "=":
+        return "="
+    return None
+
+
+def desenhar(tela, calc, botoes, fontes, mouse_pos):
+    tela.fill(COR_FUNDO)
+
+    visor = pygame.Rect(MARGEM, MARGEM, LARGURA - 2 * MARGEM, VISOR_ALTURA)
+
+    pygame.draw.rect(tela, COR_VISOR, visor, border_radius=14)
+
+    expr = fontes["pequena"].render(calc.expressao, True, COR_TEXTO_FRACO)
+    tela.blit(expr, (visor.right - 14 - expr.get_width(), visor.top + 14))
+
+    texto = calc.texto_visor()
+    fonte = fontes["grande"]
+
+    cor_visor_texto = COR_NUMERO if not calc.erro else (255, 100, 100)
+
+    render = fonte.render(texto, True, cor_visor_texto)
+    if render.get_width() > visor.width - 28:  # reduz se não couber
+        fonte = fontes["media"]
+        render = fonte.render(texto, True, cor_visor_texto)
+
+    tela.blit(render, (visor.right - 14 - render.get_width(), visor.bottom - render.get_height() - 14))
+
+    for botao in botoes:
+        cor = clarear(botao.cor) if botao.rect.collidepoint(mouse_pos) else botao.cor
+        pygame.draw.rect(tela, cor, botao.rect, border_radius=12)
+
+        if botao.cor == COR_NUMERO:
+            cor_rotulo = (20, 41, 107)  
+        else:
+            cor_rotulo = COR_TEXTO
+
+        rotulo = fontes["botao"].render(botao.rotulo, True, cor_rotulo)
+        tela.blit(rotulo, rotulo.get_rect(center=botao.rect.center))
+
+    pygame.display.flip()
+
+
+def main():
+    pygame.init()
+    tela = pygame.display.set_mode((LARGURA, ALTURA))
+    pygame.display.set_caption("Calculadora do Brasil 🇧🇷")
+    relogio = pygame.time.Clock()
+
+    fontes = {
+        "grande": pygame.font.SysFont("arial", 48, bold=True),
+        "media": pygame.font.SysFont("arial", 30, bold=True),
+        "pequena": pygame.font.SysFont("arial", 20),
+        "botao": pygame.font.SysFont("arial", 26, bold=True),
+    }
+
+    calc = Calculadora()
+    botoes = criar_botoes()
+
+    rodando = True
+    while rodando:
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                rodando = False
+            elif evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
+                for botao in botoes:
+                    if botao.rect.collidepoint(evento.pos):
+                        acionar(calc, botao.valor)
+                        break
+            elif evento.type == pygame.KEYDOWN:
+                valor = tecla_para_valor(evento)
+                if valor:
+                    acionar(calc, valor)
+
+        desenhar(tela, calc, botoes, fontes, pygame.mouse.get_pos())
+        relogio.tick(60)
+
+    pygame.quit()
+    sys.exit()
+
+
+if __name__ == "__main__":
+    main()
